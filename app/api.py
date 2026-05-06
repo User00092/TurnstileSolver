@@ -23,12 +23,12 @@ _cached_user_agent: Optional[str] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await session_manager.startup()
-    logger.info("FlareSolverr-ZD v%s listening on %s:%d", VERSION, settings.HOST, settings.PORT)
+    logger.info("TurnstileSolver v%s listening on %s:%d", VERSION, settings.HOST, settings.PORT)
     yield
     await session_manager.shutdown()
 
 
-app = FastAPI(title="FlareSolverr-ZD", version=VERSION, lifespan=lifespan)
+app = FastAPI(title="TurnstileSolver", version=VERSION, lifespan=lifespan)
 
 
 def _build_proxy_url(proxy: Optional[ProxyConfig]) -> Optional[str]:

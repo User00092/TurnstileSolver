@@ -1,9 +1,9 @@
 services:
-  flaresolverr-zd:
+  turnstile-solver:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: flaresolverr-zd
+    container_name: turnstile-solver
     ports:
       - "8191:8191"
     environment:
