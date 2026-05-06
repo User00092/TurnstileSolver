@@ -1,0 +1,24 @@
+services:
+  flaresolverr-zd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flaresolverr-zd
+    ports:
+      - "8191:8191"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8191"
+      LOG_LEVEL: "info"
+      MAX_BROWSERS: "5"
+      MAX_TIMEOUT: "60000"
+      HEADLESS: "true"
+      BROWSER_EXECUTABLE_PATH: "/usr/bin/chromium"
+    shm_size: "512mb"
+    tmpfs:
+      - /tmp:exec,mode=1777
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g

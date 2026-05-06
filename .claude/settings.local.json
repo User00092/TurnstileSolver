@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(grep *)",
+      "PowerShell(pip show *)",
+      "PowerShell(New-Item *)",
+      "Bash(python *)"
+    ]
+  }
+}
