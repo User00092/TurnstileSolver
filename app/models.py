@@ -33,6 +33,7 @@ class V1Request(BaseModel):
     returnOnlyCookies: bool = False
     returnScreenshot: bool = False
     disableMedia: bool = False
+    turnstile_input_name: str = "cf-turnstile-response"
 
 
 class CookieOutput(BaseModel):

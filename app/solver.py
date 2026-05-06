@@ -41,6 +41,7 @@ async def solve_request(
     return_screenshot: bool = False,
     disable_media: bool = False,
     session_id: Optional[str] = None,
+    turnstile_input_name: str = "cf-turnstile-response",
 ) -> SolutionResult:
     timeout_s = min(timeout_ms, settings.MAX_TIMEOUT) / 1000.0
 
@@ -63,12 +64,13 @@ async def solve_request(
             disable_media=disable_media,
             timeout_s=timeout_s,
         )
-        captured_token = await _solve_cf(tab=tab, timeout_s=timeout_s)
+        captured_token = await _solve_cf(tab=tab, timeout_s=timeout_s, turnstile_input_name=turnstile_input_name)
         return await _collect(
             tab=tab,
             return_only_cookies=return_only_cookies,
             return_screenshot=return_screenshot,
             captured_token=captured_token,
+            turnstile_input_name=turnstile_input_name,
         )
     finally:
         if tab is not None:
@@ -218,7 +220,7 @@ async def _wait_for_load(tab: Tab, timeout_s: float) -> None:
 
 # ── Cloudflare solving ─────────────────────────────────────────────────────────
 
-async def _solve_cf(tab: Tab, timeout_s: float) -> Optional[str]:
+async def _solve_cf(tab: Tab, timeout_s: float, turnstile_input_name: str = "cf-turnstile-response") -> Optional[str]:
     """Solve CF challenge. Returns the raw turnstile token read via element.attrs."""
     deadline = time.monotonic() + timeout_s
 
@@ -227,7 +229,7 @@ async def _solve_cf(tab: Tab, timeout_s: float) -> Optional[str]:
         if remaining <= 0:
             raise TimeoutError(f"Cloudflare challenge not solved within {timeout_s:.0f}s")
 
-        if  await _is_cf_page(tab):
+        if  await _is_cf_page(tab, turnstile_input_name):
             logger.info("Cloudflare browser integrity check found... attempting to solve in 90 seconds")
             try:
                 await asyncio.wait_for(
@@ -248,10 +250,10 @@ async def _solve_cf(tab: Tab, timeout_s: float) -> Optional[str]:
                 tab.verify_cf(timeout=attempt_timeout),
                 timeout=attempt_timeout + 5,
             )
-            return await _read_token_from_element(tab)
+            return await _read_token_from_element(tab, turnstile_input_name)
         except (asyncio.TimeoutError, TimeoutError):
             logger.debug("verify_cf timed out, retrying")
-            token = await _read_token_from_element(tab)
+            token = await _read_token_from_element(tab, turnstile_input_name)
             if token:
                 return token
             await asyncio.sleep(1.0)
@@ -259,19 +261,19 @@ async def _solve_cf(tab: Tab, timeout_s: float) -> Optional[str]:
             logger.warning("verify_cf error: %s", e)
             # Stale-node errors fire when CF refreshes the DOM after solving.
             # Read the token immediately before the page can clear it.
-            token = await _read_token_from_element(tab)
+            token = await _read_token_from_element(tab, turnstile_input_name)
             logger.info("Token read after verify_cf error: %r", token)
             if token:
                 return token
             # Log what _is_cf_page sees so we can tell if CF is cycling vs. solved
-            still_cf = await _is_cf_page(tab)
+            still_cf = await _is_cf_page(tab, turnstile_input_name)
             logger.info("CF page still detected after error: %s", still_cf)
             await asyncio.sleep(1.0)
 
     raise TimeoutError(f"Cloudflare challenge not solved within {timeout_s:.0f}s")
 
 
-async def _read_token_from_element(tab: Tab) -> Optional[str]:
+async def _read_token_from_element(tab: Tab, turnstile_input_name: str = "cf-turnstile-response") -> Optional[str]:
     """
     Read the CF turnstile token via CSS selector + element.attrs.
     Uses tab.select() (CSS selector) — NOT tab.find() which searches text content.
@@ -279,7 +281,7 @@ async def _read_token_from_element(tab: Tab) -> Optional[str]:
     """
     try:
         el = await asyncio.wait_for(
-            tab.select('input[name="cf-turnstile-response"]'),
+            tab.select(f'input[name="{turnstile_input_name}"]'),
             timeout=5.0,
         )
         if el is not None:
@@ -302,7 +304,7 @@ async def _read_token_from_element(tab: Tab) -> Optional[str]:
     try:
         val = await asyncio.wait_for(
             tab.evaluate(
-                "var _i=document.querySelector('input[name=\"cf-turnstile-response\"]');"
+                f"var _i=document.querySelector('input[name=\"{turnstile_input_name}\"]');"
                 "_i ? (_i.getAttribute('value') || _i.value || '') : ''"
             ),
             timeout=3.0,
@@ -312,7 +314,7 @@ async def _read_token_from_element(tab: Tab) -> Optional[str]:
         return None
 
 
-async def _is_cf_page(tab: Tab) -> bool:
+async def _is_cf_page(tab: Tab, turnstile_input_name: str = "cf-turnstile-response") -> bool:
     # Title heuristic (JS challenge, "Just a moment...")
     try:
         title = await asyncio.wait_for(tab.evaluate("document.title"), timeout=3.0)
@@ -327,9 +329,9 @@ async def _is_cf_page(tab: Tab) -> bool:
     # DOM: CF challenge present AND turnstile NOT yet solved.
     # Once the turnstile token has a value the challenge is done — return False so we stop.
     try:
-        js = """
-        (function(){
-            var resp = document.querySelector('input[name="cf-turnstile-response"]');
+        js = f"""
+        (function(){{
+            var resp = document.querySelector('input[name="{turnstile_input_name}"]');
             if (resp && resp.value) return false;
             return !!(
                 document.querySelector('#challenge-running') ||
@@ -338,7 +340,7 @@ async def _is_cf_page(tab: Tab) -> bool:
                 resp ||
                 document.querySelector('iframe[src*="challenges.cloudflare.com"]')
             );
-        })()
+        }})()
         """
         result = await asyncio.wait_for(tab.evaluate(js), timeout=3.0)
         if result:
@@ -363,6 +365,7 @@ async def _collect(
     return_only_cookies: bool,
     return_screenshot: bool,
     captured_token: Optional[str] = None,
+    turnstile_input_name: str = "cf-turnstile-response",
 ) -> SolutionResult:
     final_url = tab.url or ""
 
@@ -375,7 +378,7 @@ async def _collect(
     output_cookies = await _get_cookies(tab)
     # Prefer the token captured right after verify_cf; fall back to reading the DOM
     # (useful if the page hasn't auto-submitted yet).
-    turnstile_token = captured_token or await _get_turnstile_token(tab)
+    turnstile_token = captured_token or await _get_turnstile_token(tab, turnstile_input_name)
 
     html: Optional[str] = None
     if not return_only_cookies:
@@ -398,11 +401,11 @@ async def _collect(
     )
 
 
-async def _get_turnstile_token(tab: Tab) -> Optional[str]:
+async def _get_turnstile_token(tab: Tab, turnstile_input_name: str = "cf-turnstile-response") -> Optional[str]:
     try:
-        js = """
+        js = f"""
         window.__cf_token_captured ||
-        document.querySelector('input[name="cf-turnstile-response"]')?.value ||
+        document.querySelector('input[name="{turnstile_input_name}"]')?.value ||
         ''
         """
         val = await asyncio.wait_for(tab.evaluate(js), timeout=3.0)

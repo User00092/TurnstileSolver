@@ -182,6 +182,7 @@ curl -X POST http://localhost:8191/v1 \
 | `returnOnlyCookies` | bool | `false` | Skip HTML in response |
 | `returnScreenshot` | bool | `false` | Include base64 PNG screenshot instead of HTML |
 | `disableMedia` | bool | `false` | Block images, video, fonts (faster loads) |
+| `turnstile_input_name` | string | `"cf-turnstile-response"` | Name attribute of the hidden input holding the Turnstile token — override if the target site uses a non-standard field name |
 
 ---
 
@@ -237,7 +238,7 @@ docker compose run -e MAX_BROWSERS=3 -e LOG_LEVEL=debug turnstile-solver
 2. A Chrome browser is launched (or a persistent session is reused)
 3. The target URL is navigated to in a new tab
 4. If a Cloudflare challenge is detected (title heuristic + DOM inspection), `verify_cf()` clicks the Turnstile checkbox
-5. Once the challenge passes, the Turnstile token is read from `input[name="cf-turnstile-response"]` via CDP DOM node — this uses the HTML attribute directly, which CF sets via `setAttribute`, making it readable even after React re-renders clear the JS property
+5. Once the challenge passes, the Turnstile token is read from `input[name="cf-turnstile-response"]` (or a custom name via `turnstile_input_name`) via CDP DOM node — this uses the HTML attribute directly, which CF sets via `setAttribute`, making it readable even after React re-renders clear the JS property
 6. Cookies, HTML, and the token are returned in the response
 7. The tab is closed; ephemeral browsers are stopped and the semaphore slot is released
 

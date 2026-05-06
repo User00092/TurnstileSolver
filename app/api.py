@@ -154,6 +154,7 @@ async def _dispatch(req: V1Request, start_ts: int) -> Dict[str, Any]:
             return_screenshot=req.returnScreenshot,
             disable_media=req.disableMedia,
             session_id=req.session,
+            turnstile_input_name=req.turnstile_input_name,
         )
         end_ts = int(time.time() * 1000)
         return V1Response(
